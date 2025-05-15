@@ -1,94 +1,92 @@
-/* General Queries for Imola GP Analysis */
+/* Race Strategy Queries for Franco Colapinto's Imola GP Debut (2025) */
 
-/* Task 1: Most Races Won by Driver
-   Description: List the top 5 drivers with the most wins at Imola, showing their full names and win counts. */
-SELECT TOP 5
-	d.forename + ' ' + d.surname AS Driver,
-	d.nationality AS Nationality,
-	SUM(CASE WHEN r.position = 1 THEN 1 ELSE 0 END) AS TotalWins,
-	MAX(ra.date) AS LastWin
-FROM results r
-JOIN drivers d ON d.driverId = r.driverId
-JOIN races ra ON ra.raceId = r.raceId
-JOIN circuits c ON c.circuitId = ra.circuitId
-WHERE c.location LIKE '%mola%' AND r.position = 1
-GROUP BY d.forename, d.surname, d.driverRef, d.nationality
-ORDER BY TotalWins DESC;
-
-/* Task 2: Most Pole Positions by Driver
-   Description: Identify the top 5 drivers with the most pole positions at Imola, using concatenated full names. */
-SELECT TOP 5
-	d.forename + ' ' + d.surname AS Driver,
-	d.nationality AS Nationality,
-	SUM(CASE WHEN q.position = 1 THEN 1 ELSE 0 END) AS TotalPoles,
-	MAX(ra.date) AS LastPolePosition
-FROM qualifying q
-JOIN drivers d ON d.driverId = q.driverId
-JOIN races ra ON ra.raceId = q.raceId
-JOIN circuits c ON c.circuitId = ra.circuitId
-WHERE c.location LIKE '%mola%' AND q.position = 1
-GROUP BY d.forename, d.surname, d.nationality
-ORDER BY TotalPoles DESC;
-
-/* Task 3: Most Wins by Constructor
-   Description: Show the top 5 constructors with the most Imola wins. */
-WITH TotalWins AS
-	(SELECT 
-		SUM(CASE WHEN r.position = 1 THEN 1 ELSE 0 END) AS TotalWins,
-		r.constructorId AS Constructor
-	FROM results r
-	JOIN races ra ON ra.raceId = r.raceId
-	WHERE ra.circuitId = 21
-	GROUP BY r.constructorId),
-LastWin AS(
-	SELECT
-		MAX(ra.date) AS LastWin,
-		constructorId
-	FROM races ra
-	JOIN results r ON r.raceId = ra.raceId
-	WHERE ra.circuitId = 21 AND r.position = 1
-	GROUP BY constructorId)
-SELECT
-	c.name AS Constructor,
-	c.nationality AS Nationality,
-	tw.TotalWins,
-	lw.LastWin
-FROM TotalWins tw
-JOIN LastWin lw ON lw.constructorId = tw.Constructor
-JOIN constructors c ON c.constructorId = tw.Constructor
-WHERE tw.TotalWins > 0
-ORDER BY tw.TotalWins DESC;
-
-/* Task 8: Constructor Pole-to-Win Conversion
-   Description: For constructors with 5+ Imola poles, calculate the percentage of poles converted to wins, rounded to 2 decimals. */
-WITH TotalPoles AS
+/* Task 10: Rookie Performance Trends
+   Description: Analyze historical rookie performances at Imola (drivers in their first Imola race), showing qualifying, race positions, and points. */
+WITH DriversResults AS
 (SELECT
-	SUM(CASE WHEN q.position = 1 THEN 1 ELSE 0 END) AS TotalPoles,
-	c.constructorId
+	d.driverId,
+	d.surname + ' ' + d.forename AS Driver,
+	ra.year AS Season,
+	r.position AS FinishPosition,
+	r.points AS Points,
+	r.raceId,
+	ROW_NUMBER() OVER(PARTITION BY d.surname + ' ' + d.forename ORDER BY ra.year ASC) AS TimesInImola
+FROM results r
+JOIN races ra ON ra.raceId = r.raceId
+JOIN drivers d ON d.driverId = r.driverId
+WHERE ra.circuitId = 21 AND r.position IS NOT NULL
+)
+SELECT
+	Driver, 
+	Season,
+	q.position AS QualyPosition,
+	dr.FinishPosition,
+	(CAST(q.position AS int) - CAST(dr.finishposition AS int)) AS PositionsGained,
+	CASE WHEN dr.Points > 0 THEN 'Points' ELSE 'No Points' END AS PointsYN,
+	dr.Points
+FROM DriversResults dr
+JOIN qualifying q ON q.raceId = dr.raceId AND q.driverId = dr.driverId
+WHERE TimesInImola = 1
+ORDER BY Season ASC;
+
+/* Task 13: Qualifying Upsets
+   Description: Find Imola races where drivers outside the top 5 in qualifying finished in the points, to highlight potential for Colapinto. */
+SELECT
+	d.forename + ' ' + d.surname AS Driver,
+	ra.year AS Season,
+	q.position AS QualyPosition,
+	r.position AS FinishPosition,
+	CASE WHEN r.position <= 3 THEN 'Podium'
+		WHEN r.position <= 10 THEN 'Points'
+		ELSE 'No Points' END AS PodiumYN,
+	(CAST(r.position AS FLOAT) - (CAST(q.position AS float))) AS PositionsGained
 FROM qualifying q
-JOIN results r ON r.raceId = q.raceId
-JOIN constructors c ON c.constructorId = r.constructorId
 JOIN races ra ON ra.raceId = q.raceId
-WHERE ra.circuitId = 21
-GROUP BY c.constructorId
-HAVING SUM(CASE WHEN q.position = 1 THEN 1 ELSE 0 END) > 5),
-TotalWins AS(
-	SELECT
-		SUM(CASE WHEN r.position = 1 THEN 1 ELSE 0 END) AS TotalWinsFromPole,
-		c.constructorId
-	FROM results r
-	JOIN qualifying q ON q.raceId = r.raceId
-	JOIN constructors c ON c.constructorId = r.constructorId
-	JOIN races ra ON ra.raceId = r.raceId
-	WHERE ra.circuitId = 21 AND q.position = 1
-	GROUP BY c.constructorId
-	HAVING SUM(CASE WHEN r.position = 1 THEN 1 ELSE 0 END) > 0)
+JOIN results r ON r.raceId = q.raceId AND r.driverId = q.driverId
+JOIN drivers d ON d.driverId = q.driverId
+WHERE ra.circuitId = 21 AND q.position >5
+	AND r.position <= 10 AND ra.year >= 2020
+ORDER BY ra.year ASC;
+
+/* Task 15: Probability of Scoring Points by Starting Position
+   Description: Calculate probability of finishing in points (top 10, 2020 - 2024) by starting position at Imola. */
+WITH TotalPositions AS
+(SELECT 
+	r.raceId,
+	r.driverId,
+	r.grid,
+	CASE WHEN r.grid <= 3 THEN '1-3'
+		WHEN r.grid <=6 THEN '4-6'
+		WHEN r.grid <=9 THEN '7-9'
+		WHEN r.grid <=12 THEN '10-12'
+		WHEN r.grid <=15 THEN '13-15'
+		WHEN r.grid <=20 THEN '16-20'
+		ELSE '20+' END AS StartingGroup,
+	CASE WHEN r.position <= 10 THEN 1 ELSE 0 END AS Points
+FROM results r
+JOIN races ra ON ra.raceId = r.raceId
+WHERE ra.year >= 2020 AND ra.circuitId = 21 AND r.grid > 0)
+SELECT
+	StartingGroup,
+	COUNT(*) AS TotalStarts,
+	SUM(Points) AS PointsFinishes,
+	ROUND(SUM(CAST(Points AS float)) / COUNT(*) * 100, 2) AS PropabilityOfPoints
+FROM TotalPositions tp
+GROUP BY StartingGroup
+ORDER BY PropabilityOfPoints DESC;
+
+/* Task 17: Pit Stop Strategy Evolution (2020 - 2024)
+   Description: Analyze the average and fastest pit stop times (in seconds, rounded to 2 decimals) by constructor since 2020. */
 SELECT
 	c.name AS Constructor,
-	tp.totalpoles,
-	tw.TotalWinsFromPole,
-	ROUND((CAST(tw.TotalWinsFromPole AS Float) / tp.TotalPoles ) * 100 ,2) AS PercentageOfPolesToWins
-FROM TotalPoles tp
-JOIN TotalWins tw ON tw.constructorId = tp.constructorId
-JOIN constructors c ON c.constructorId = tp.constructorId
-ORDER BY PercentageOfPolesToWins DESC;
+	ra.year AS Season,
+	ROUND(MIN(ps.duration),2) AS FastestPitStop,
+	ROUND(AVG(ps.duration),2) AS AVGPitStopDuration
+FROM pit_stops ps
+JOIN races ra ON ra.raceId = ps.raceId
+JOIN drivers d ON d.driverId = ps.driverId
+JOIN results r ON r.raceId = ps.raceId AND r.driverId = ps.driverId
+JOIN constructors c ON c.constructorId = r.constructorId
+WHERE ra.year >= 2020
+GROUP BY ra.year, c.name
+ORDER BY season ASC;
