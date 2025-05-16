@@ -84,9 +84,8 @@ Ideal for:
 ---
 
 ## Portfolio & Social
-
-- **Project Page**: [See full analysis here](https://matirossi87mr.wixsite.com/matiasrossi-porfolio/post/optimizing-mco-s-holiday-operations-a-data-driven-analysis-of-december-2024-flight-traffic)  
-- **LinkedIn Post**: [Coming soon...]  
+  
+- **LinkedIn Post**: (https://www.linkedin.com/posts/matias-rossi-95-data-strength_imola-2025-preview-activity-7329208666597777409-juPK?utm_source=share&utm_medium=member_desktop&rcm=ACoAAC4G2o8BGvIvjnvj4Gxt2GVyViJBBfIaDF4)  
 - **GitHub Profile**: [github.com/matiasrossi87](https://github.com/matiasrossi87)
 
 ---
